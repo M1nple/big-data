@@ -1,0 +1,83 @@
+import java.io.IOException;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+public class ProductCountPerCountry {
+
+    public static class CountryMapper
+            extends Mapper<LongWritable, Text, Text, IntWritable>{
+
+        private Text country = new Text();
+        private final static IntWritable one = new IntWritable(1);
+        private boolean isHeader = true;
+
+        public void map(LongWritable key, Text value, Context context
+                        ) throws IOException, InterruptedException {
+            String line = value.toString();
+
+            // Bỏ qua dòng tiêu đề
+            if (isHeader) {
+                isHeader = false;
+                return;
+            }
+
+            // Tách dòng thành các trường dựa trên dấu phẩy
+            // Sử dụng biểu thức chính quy để xử lý đúng các trường có chứa dấu phẩy bên trong
+            String[] fields = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1);
+            // Kiểm tra số lượng trường để tránh lỗi
+            if (fields.length < 8) {
+                return;
+            }
+
+            String countryName = fields[7].trim(); // Trường "Country" ở vị trí thứ 8 (0-based index)
+            if (!countryName.isEmpty()) {
+                country.set(countryName);
+                context.write(country, one);
+            }
+        }
+    }
+
+    public static class CountryReducer
+            extends Reducer<Text, IntWritable, Text, IntWritable> {
+        private IntWritable result = new IntWritable();
+
+        public void reduce(Text key, Iterable<IntWritable> values,
+                           Context context
+                           ) throws IOException, InterruptedException {
+            int sum = 0;
+            for (IntWritable val : values) {
+                sum += val.get();
+            }
+            result.set(sum);
+            context.write(key, result);
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        if(args.length != 2){
+            System.err.println("Usage: ProductCountPerCountry <input path> <output path>");
+            System.exit(-1);
+        }
+
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf, "Product Count Per Country");
+        job.setJarByClass(ProductCountPerCountry.class);
+        job.setMapperClass(CountryMapper.class);
+        job.setCombinerClass(CountryReducer.class); // Sử dụng Reducer làm Combiner
+        job.setReducerClass(CountryReducer.class);
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(IntWritable.class);
+        FileInputFormat.addInputPath(job, new Path(args[0]));
+        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+    }
+}

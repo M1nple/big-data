@@ -1,0 +1,59 @@
+import java.util.;
+import java.io.IOException;
+
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.;
+import org.apache.hadoop.mapred.*;
+
+
+public class ProcessUnit2 { 
+
+    public static class SalesMapper extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
+        private final static IntWritable ONE = new IntWritable(1); 
+        public void map(LongWritable key, Text value, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+            String valueString = value.toString();
+            String[] singleCountryData = valueString.split(",");
+            if (singleCountryData.length > 7) {
+                output.collect(new Text(singleCountryData[7]), ONE); // Sử dụng hằng số
+            } else {
+                System.err.println("Dữ liệu không đủ: " + valueString);
+            }
+        }
+    }
+    public static class SalesCountryReducer extends MapReduceBase implements Reducer<Text, IntWritable, Text, IntWritable> {
+         public void reduce(Text key, Iterator<IntWritable> values, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+             int frequencyForCountry = 0;
+
+             while (values.hasNext()) {
+                 frequencyForCountry += values.next().get(); // Không cần ép kiểu
+             }
+
+         output.collect(key, new IntWritable(frequencyForCountry));
+    }
+}
+    public static void main(String[] args) {
+        if (args.length != 2) {
+            System.err.println("Usage: ProcessUnit2 <input path> <output path>");
+            System.exit(-1);
+        }
+JobConf conf = new JobConf(ProcessUnit2.class);
+        conf.setJobName("SalePerCountry");
+        conf.setOutputKeyClass(Text.class);
+        conf.setOutputValueClass(IntWritable.class);
+        conf.setMapperClass(SalesMapper.class); // Truyền tên lớp mà không cần prefix
+        conf.setReducerClass(SalesCountryReducer.class);
+        conf.setInputFormat(TextInputFormat.class);
+        conf.setOutputFormat(TextOutputFormat.class);
+        FileInputFormat.setInputPaths(conf, new Path(args[0]));
+        FileOutputFormat.setOutputPath(conf, new Path(args[1]));
+
+        // Khởi tạo JobClient
+        JobClient jobClient = new JobClient();
+        jobClient.setConf(conf);
+        try {
+            JobClient.runJob(conf);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
